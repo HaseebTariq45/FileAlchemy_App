@@ -1,6 +1,8 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
@@ -39,63 +41,103 @@ class FileAlchemyHomePage extends StatefulWidget {
 
 class _FileAlchemyHomePageState extends State<FileAlchemyHomePage> {
   File? selectedFile;
+  Uint8List? selectedFileBytes;
   String? selectedFileName;
   String? selectedOutputFormat;
   bool isConverting = false;
   String? conversionError;
   File? convertedFile;
+  Uint8List? convertedBytes;
 
   Future<void> pickFile() async {
     final result = await FilePicker.platform.pickFiles();
     
     if (result != null) {
-      final file = File(result.files.single.path!);
-      
       setState(() {
-        selectedFile = file;
-        selectedFileName = path.basename(file.path);
+        selectedFileName = result.files.single.name;
         selectedOutputFormat = null;
         convertedFile = null;
+        convertedBytes = null;
         conversionError = null;
+        
+        // Handle differently for web and mobile/desktop
+        if (kIsWeb) {
+          // On web, we get bytes directly
+          selectedFileBytes = result.files.single.bytes;
+          selectedFile = null;
+        } else {
+          // On mobile/desktop, we get a file path
+          selectedFile = File(result.files.single.path!);
+          selectedFileBytes = null;
+        }
       });
     }
   }
 
   List<String> getAvailableOutputFormats() {
-    if (selectedFile == null) return [];
-    return ConversionService.getAvailableOutputFormats(selectedFile!);
+    // For web, we'll use the filename to guess the format
+    if (kIsWeb) {
+      if (selectedFileName == null) return [];
+      final extension = path.extension(selectedFileName!).toLowerCase().replaceAll('.', '');
+      final format = FileFormats.getByExtension(extension);
+      if (format == null) return [];
+      
+      // Find formats that this format can convert to
+      for (final entry in ConversionService.supportedConversions.entries) {
+        if (entry.key.contains(format.mimeType)) {
+          return entry.value;
+        }
+      }
+      return [];
+    } else {
+      // For mobile/desktop
+      if (selectedFile == null) return [];
+      return ConversionService.getAvailableOutputFormats(selectedFile!);
+    }
   }
 
   Future<void> convertFile() async {
-    if (selectedFile == null || selectedOutputFormat == null) return;
+    if ((selectedFile == null && selectedFileBytes == null) || selectedOutputFormat == null) return;
     
     setState(() {
       isConverting = true;
       conversionError = null;
       convertedFile = null;
+      convertedBytes = null;
     });
     
     try {
-      // Request storage permission
-      final status = await Permission.storage.request();
-      if (!status.isGranted) {
-        throw Exception('Storage permission is required');
+      if (kIsWeb) {
+        // Web implementation (simulated)
+        // In a real app, you'd use web-specific libraries for conversion
+        await Future.delayed(const Duration(seconds: 1)); // Simulate processing
+        setState(() {
+          // Just returning the same bytes for simulation
+          convertedBytes = selectedFileBytes;
+          isConverting = false;
+        });
+      } else {
+        // Request storage permission for mobile/desktop
+        final status = await Permission.storage.request();
+        if (!status.isGranted) {
+          throw Exception('Storage permission is required');
+        }
+        
+        // Get temporary directory for output
+        final tempDir = await getTemporaryDirectory();
+        
+        // Use our ConversionService to perform the conversion
+        final newFile = await ConversionService.convertFile(
+          selectedFile!, 
+          selectedOutputFormat!, 
+          tempDir.path
+        );
+        
+        setState(() {
+          convertedFile = newFile;
+          isConverting = false;
+        });
       }
-      
-      // Get temporary directory for output
-      final tempDir = await getTemporaryDirectory();
-      
-      // Use our ConversionService to perform the conversion
-      final newFile = await ConversionService.convertFile(
-        selectedFile!, 
-        selectedOutputFormat!, 
-        tempDir.path
-      );
-      
-      setState(() {
-        convertedFile = newFile;
-        isConverting = false;
-      });
     } catch (e) {
       setState(() {
         conversionError = e.toString();
@@ -105,8 +147,18 @@ class _FileAlchemyHomePageState extends State<FileAlchemyHomePage> {
   }
 
   Future<void> shareConvertedFile() async {
-    if (convertedFile != null) {
-      await Share.shareXFiles([XFile(convertedFile!.path)]);
+    if (kIsWeb) {
+      if (convertedBytes != null && selectedFileName != null) {
+        // For web, we would need a different approach
+        // This is just a placeholder
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Downloading converted file is not supported in this demo')),
+        );
+      }
+    } else {
+      if (convertedFile != null) {
+        await Share.shareXFiles([XFile(convertedFile!.path)]);
+      }
     }
   }
 
@@ -131,7 +183,7 @@ class _FileAlchemyHomePageState extends State<FileAlchemyHomePage> {
             ),
             const SizedBox(height: 20),
             
-            if (selectedFile != null) ...[
+            if (selectedFileName != null) ...[
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16.0),
@@ -210,7 +262,7 @@ class _FileAlchemyHomePageState extends State<FileAlchemyHomePage> {
                 ),
               ],
               
-              if (convertedFile != null) ...[
+              if (convertedFile != null || convertedBytes != null) ...[
                 const SizedBox(height: 20),
                 Card(
                   color: Colors.green[100],
@@ -228,14 +280,15 @@ class _FileAlchemyHomePageState extends State<FileAlchemyHomePage> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Output File: ${path.basename(convertedFile!.path)}',
+                          'Output File: ${convertedFile != null ? path.basename(convertedFile!.path) : 
+                            '${path.basenameWithoutExtension(selectedFileName!)}.$selectedOutputFormat'}',
                           style: TextStyle(color: Colors.green[800]),
                         ),
                         const SizedBox(height: 16),
                         ElevatedButton.icon(
                           onPressed: shareConvertedFile,
                           icon: const Icon(Icons.share),
-                          label: const Text('Share'),
+                          label: Text(kIsWeb ? 'Download' : 'Share'),
                         ),
                       ],
                     ),
