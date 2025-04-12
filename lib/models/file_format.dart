@@ -63,6 +63,13 @@ class FileFormats {
 
   // Image formats
   static const jpeg = FileFormat(
+    extension: 'jpeg',
+    mimeType: 'image/jpeg',
+    name: 'JPEG Image',
+    description: 'JPEG image format',
+  );
+
+  static const jpg = FileFormat(
     extension: 'jpg',
     mimeType: 'image/jpeg',
     name: 'JPEG Image',
@@ -99,23 +106,39 @@ class FileFormats {
 
   // List of all formats
   static final List<FileFormat> allFormats = [
-    txt, markdown, html, pdf, docx, jpeg, png, gif, bmp, webp
+    txt, markdown, html, pdf, docx, jpeg, jpg, png, gif, bmp, webp
   ];
 
   // Get a format by extension
   static FileFormat? getByExtension(String extension) {
+    print('Looking up format for extension: $extension');
     final cleanExtension = extension.toLowerCase().replaceAll('.', '');
-    return allFormats.cast<FileFormat?>().firstWhere(
-      (format) => format!.extension == cleanExtension,
-      orElse: () => null,
-    );
+    try {
+      final format = allFormats.firstWhere(
+        (format) => format.extension == cleanExtension,
+        orElse: () => throw Exception('Format not found for extension: $extension'),
+      );
+      print('Found format: ${format.mimeType}');
+      return format;
+    } catch (e) {
+      print('Error finding format: $e');
+      return null;
+    }
   }
 
   // Get a format by mime type
   static FileFormat? getByMimeType(String mimeType) {
-    return allFormats.cast<FileFormat?>().firstWhere(
-      (format) => format!.mimeType == mimeType,
-      orElse: () => null,
-    );
+    print('Looking up format for MIME type: $mimeType');
+    try {
+      final format = allFormats.firstWhere(
+        (format) => format.mimeType == mimeType,
+        orElse: () => throw Exception('Format not found for MIME type: $mimeType'),
+      );
+      print('Found format: ${format.extension}');
+      return format;
+    } catch (e) {
+      print('Error finding format: $e');
+      return null;
+    }
   }
 } 
